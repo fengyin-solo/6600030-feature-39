@@ -1,15 +1,30 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useFEAStore } from '../store/fea';
 
 const store = useFEAStore();
 const canvas = ref<HTMLCanvasElement>();
+const container = ref<HTMLDivElement>();
 
 let offsetX = 50;
 let offsetY = 50;
 let scale = 1;
 let isDragging = false;
 let lastMouse = { x: 0, y: 0 };
+let resizeObserver: ResizeObserver | null = null;
+
+function resizeCanvas() {
+  if (!canvas.value || !container.value) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.value.getBoundingClientRect();
+  canvas.value.width = Math.floor(rect.width * dpr);
+  canvas.value.height = Math.floor(rect.height * dpr);
+  const ctx = canvas.value.getContext('2d');
+  if (ctx) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  draw();
+}
 
 function worldToScreen(x: number, y: number): [number, number] {
   return [x * scale + offsetX, y * scale + offsetY];
@@ -21,10 +36,11 @@ function screenToWorld(sx: number, sy: number): [number, number] {
 
 function draw() {
   const ctx = canvas.value?.getContext('2d');
-  if (!ctx) return;
+  if (!ctx || !container.value) return;
 
-  const W = canvas.value!.width;
-  const H = canvas.value!.height;
+  const rect = container.value.getBoundingClientRect();
+  const W = rect.width;
+  const H = rect.height;
 
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#0f172a';
@@ -287,8 +303,8 @@ function handleClick(e: MouseEvent) {
   }
   const worldW = maxX - minX || 1;
   const worldH = maxY - minY || 1;
-  const W = canvas.value!.width;
-  const H = canvas.value!.height;
+  const W = rect.width;
+  const H = rect.height;
   const margin = 60;
   const fitScale = Math.min((W - margin * 2) / worldW, (H - margin * 2) / worldH);
   const drawScale = fitScale * scale;
@@ -331,7 +347,22 @@ function handleClick(e: MouseEvent) {
 }
 
 onMounted(() => {
-  nextTick(draw);
+  nextTick(() => {
+    resizeCanvas();
+    if (container.value) {
+      resizeObserver = new ResizeObserver(() => {
+        resizeCanvas();
+      });
+      resizeObserver.observe(container.value);
+    }
+  });
+});
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
 });
 
 watch(
@@ -350,16 +381,16 @@ watch(
 </script>
 
 <template>
-  <canvas
-    ref="canvas"
-    width="800"
-    height="500"
-    class="w-full rounded-lg border border-slate-700 cursor-crosshair"
-    @mousedown="handleMouseDown"
-    @mousemove="handleMouseMove"
-    @mouseup="handleMouseUp"
-    @mouseleave="handleMouseUp"
-    @wheel="handleWheel"
-    @click="handleClick"
-  />
+  <div ref="container" class="w-full flex-1 min-h-0 relative">
+    <canvas
+      ref="canvas"
+      class="absolute inset-0 w-full h-full rounded-lg border border-slate-700 cursor-crosshair"
+      @mousedown="handleMouseDown"
+      @mousemove="handleMouseMove"
+      @mouseup="handleMouseUp"
+      @mouseleave="handleMouseUp"
+      @wheel="handleWheel"
+      @click="handleClick"
+    />
+  </div>
 </template>
